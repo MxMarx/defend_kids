@@ -4,15 +4,15 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
-from selenium.common.exceptions import NoSuchElementException, TimeoutException
+from selenium.common.exceptions import NoSuchElementException, TimeoutException, NoSuchWindowException
 import undetected_chromedriver as uc
 
-import logging
+from generateData import generateData
+from faker import Faker
 
+import logging
 import random
-# import time
-import names
-import markovify
+import time
 import os
 import sys
 from anticaptchaofficial.recaptchav2proxyless import *
@@ -20,12 +20,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-cities = ["Dallas", "Austin", "Houston", "Hazel", "Fort Worth"]
-corpus = open("./corpus.txt",encoding='utf8').read()
-model = markovify.Text(corpus)
-input_text = ""
-for (i) in range(random.randint(1, 10)):
-    input_text += model.make_sentence()
+
+fake = Faker()
+fake.add_provider(generateData)
 
 # [name, email, location, info]
 form_types = [
@@ -48,49 +45,55 @@ class FormType():
         self.location = location
         self.info = info
 
-
 class Selenium():
     def __init__(self):
         self.driver = uc.Chrome(use_subprocess=True, version_main=os.getenv('CHROME_VERSION'))
-
         # setup anti-captcha solver
         self.solver = recaptchaV2Proxyless()
         self.init_solver()
+        self.count = 1
 
     def wait_for(self, condition, timeout=10):
         return WebDriverWait(self.driver, timeout=timeout).until(condition)
 
     def run(self):
-        try:
-            logging.debug('Reloading page')
-            self.driver.get('https://defendkidstx.com/')
+        while True:
+            try:
+                logging.debug('Reloading page')
+                self.driver.get('https://defendkidstx.com/')
 
-            self.check_page_loaded()
-            time.sleep(random.randrange(1, 3))
+                self.check_page_loaded()
+                time.sleep(random.randrange(1, 3))
 
-            self.click_report_button()
-            time.sleep(random.randrange(1, 2))
+                self.click_report_button()
+                time.sleep(random.randrange(1, 2))
 
-            self.fill_form()
-            time.sleep(random.randrange(0, 1))
-            self.check_recaptcha()
+                self.fill_form()
+                time.sleep(random.randrange(2, 4))
 
-            time.sleep(random.randrange(1, 4))
-            self.submit()
+                self.check_recaptcha()
+                time.sleep(random.randrange(1, 2))
 
-        except Exception:
-            logging.warning('Something happened!')
-            pass
+                self.submit()
+                time.sleep(random.randrange(5, 9))
+
+            except RuntimeError as error:
+                logging.error(error)
+            except NoSuchWindowException:  # If the browser window is closed
+                break
+            except Exception:
+                logging.exception('Something happened!')
+                time.sleep(random.randrange(2, 4))
 
     def check_page_loaded(self):
         try:
             return self.wait_for(EC.title_contains("Defend"), 10)
         except TimeoutException:
             if "Access denied" in self.driver.title:
-                logging.warning('Temporarily blocked (nice!)')
+                raise RuntimeError('Temporarily blocked (nice!)')
             else:
-                logging.warning('Unable to load page')
-            raise Exception
+                raise RuntimeError('Unable to load page')
+
 
     def click_report_button(self):
         try:
@@ -99,8 +102,7 @@ class Selenium():
             self.driver.find_element(By.XPATH, "//img[@title='report-resize-min']").click()
             logging.debug('Report button clicked!')
         except NoSuchElementException:
-            logging.warning('Report button not found!')
-            raise Exception
+            raise RuntimeError('Report button not found!')
 
     def check_recaptcha(self):
         try:
@@ -123,9 +125,9 @@ class Selenium():
                 checkbox.click()
 
                 # Wait until the reCAPTCHA box is checked
-                logging.info('Waiting for reCAPTCHA')
+                logging.debug('Waiting for reCAPTCHA')
                 self.wait_for(lambda x: checkbox.get_attribute("aria-checked") == 'true', 600)
-                logging.info('reCAPTCHA finished!')
+                logging.debug('reCAPTCHA finished!')
 
                 self.driver.switch_to.default_content()
 
@@ -164,6 +166,7 @@ class Selenium():
             logging.debug(f"trying button {button[1]}")
             try:
                 self.driver.find_element(button[0], button[1]).click()
+                self.count += 1
                 return
             except NoSuchElementException:
                 logging.warning(f"couldn't find button {button[1]}")
@@ -210,22 +213,23 @@ class Selenium():
         return True
 
     def fill_form(self):
+        spam = fake.complaint()
         logging.debug("Filling out form")
-        name = names.get_full_name()
         # they have two alternate input forms, presumably to prevent me from doing things like this - this should account for both
         form_type = self.get_form_type()
-
         try:
+            # scroll down because sometimes the captcha doesn't fit
+            self.driver.execute_script("window.scrollTo(0,document.body.scrollHeight)")
             # if the form hasn't opened properly, this will raise an error and retry
-            self.driver.find_element(By.ID, form_type.name).send_keys(name)
-            time.sleep(random.randrange(0, 1))
-            self.driver.find_element(By.ID, form_type.email).send_keys(name.replace(
-                    " ", "") + str(random.randint(100000, 500000)) + "@gmail.com")
-            # Location cannot contain any special characters, only letters and numbers
-            self.driver.find_element(By.ID, form_type.location).send_keys(random.choice(cities))
-            time.sleep(random.randrange(0, 1))
-            self.driver.find_element(By.ID, form_type.info).send_keys(input_text)
-            time.sleep(random.randrange(0, 1))
+            self.driver.find_element(By.ID, form_type.name).send_keys(spam["name"])
+            time.sleep(random.randrange(0, 2))
+            self.driver.find_element(By.ID, form_type.email).send_keys(spam["email"])
+            self.driver.find_element(By.ID, form_type.location).send_keys(spam["address"])
+            time.sleep(random.randrange(0, 2))
+            self.driver.find_element(By.ID, form_type.info).send_keys(spam["complaint"])
+            time.sleep(random.randrange(0, 2))
+
+            logging.info(f'{self.count} transphobes annoyed: {spam["name"]}, {spam["email"]}, {spam["address"]}, {spam["complaint"]}')
         except NoSuchElementException:
             logging.warning("Couldn't fill out form!")
 
@@ -236,6 +240,4 @@ logging.getLogger('urllib3').setLevel(logging.INFO)
 logging.getLogger('undetected_chromedriver').setLevel(logging.INFO)
 
 form_filler = Selenium()
-while True:
-    form_filler.run()
-    time.sleep(random.randrange(4, 8))
+form_filler.run()
