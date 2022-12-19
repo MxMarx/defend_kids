@@ -52,7 +52,6 @@ class FormType():
 class Selenium():
     def __init__(self):
         self.driver = uc.Chrome(use_subprocess=True, version_main=os.getenv('CHROME_VERSION'))
-        self.wait = WebDriverWait(self.driver, 3000000000)
 
         # setup anti-captcha solver
         self.solver = recaptchaV2Proxyless()
@@ -73,9 +72,8 @@ class Selenium():
             time.sleep(random.randrange(1, 2))
 
             self.fill_form()
-
-            if not self.use_solver:
-                self.check_recaptcha()
+            time.sleep(random.randrange(0, 1))
+            self.check_recaptcha()
 
             time.sleep(random.randrange(1, 4))
             self.submit()
@@ -127,7 +125,7 @@ class Selenium():
                 # Wait until the reCAPTCHA box is checked
                 logging.info('Waiting for reCAPTCHA')
                 self.wait_for(lambda x: checkbox.get_attribute("aria-checked") == 'true', 600)
-                logging.debug('reCAPTCHA finished!')
+                logging.info('reCAPTCHA finished!')
 
                 self.driver.switch_to.default_content()
 
@@ -220,14 +218,14 @@ class Selenium():
         try:
             # if the form hasn't opened properly, this will raise an error and retry
             self.driver.find_element(By.ID, form_type.name).send_keys(name)
-            time.sleep(random.random())
+            time.sleep(random.randrange(0, 1))
             self.driver.find_element(By.ID, form_type.email).send_keys(name.replace(
                     " ", "") + str(random.randint(100000, 500000)) + "@gmail.com")
             # Location cannot contain any special characters, only letters and numbers
             self.driver.find_element(By.ID, form_type.location).send_keys(random.choice(cities))
-            time.sleep(random.random())
+            time.sleep(random.randrange(0, 1))
             self.driver.find_element(By.ID, form_type.info).send_keys(input_text)
-            time.sleep(random.random())
+            time.sleep(random.randrange(0, 1))
         except NoSuchElementException:
             logging.warning("Couldn't fill out form!")
 
